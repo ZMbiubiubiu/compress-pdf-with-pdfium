@@ -48,6 +48,8 @@ func SaveImageFromData(data []byte, filePath string) (string, error) {
 	// 使用 image.Decode 直接解码图片
 	img, format, err := image.Decode(bytes.NewReader(data))
 	if err != nil {
+		// 临时写到文件中，留待后续处理
+		writeRawFile(filePath, data)
 		return "", fmt.Errorf("无法解码图片: %v", err)
 	}
 
@@ -76,7 +78,7 @@ func writeJPEGFile(filename string, img image.Image) error {
 	}
 	defer outFile.Close()
 
-	opts := &jpeg.Options{Quality: 50} // Adjust the quality as needed
+	opts := &jpeg.Options{Quality: 80} // Adjust the quality as needed
 	return jpeg.Encode(outFile, img, opts)
 }
 
@@ -89,7 +91,7 @@ func writeGIFFile(filename string, img image.Image) error {
 	}
 	defer outFile.Close()
 
-	return gif.Encode(outFile, img, nil) // 使用默认的 GIF 编码选项
+	return gif.Encode(outFile, img, nil)
 }
 
 func writePNGFile(filename string, img image.Image) error {

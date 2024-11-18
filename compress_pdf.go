@@ -21,9 +21,9 @@ func CompressImagesByRebuild(instance pdfium.Pdfium, inputPath string, outputPat
 	if err != nil {
 		return fmt.Errorf("无法加载 PDF 文档: %v", err)
 	}
-	// defer instance.FPDF_CloseDocument(&requests.FPDF_CloseDocument{
-	// 	Document: pdfDoc.Document,
-	// })
+	defer instance.FPDF_CloseDocument(&requests.FPDF_CloseDocument{
+		Document: pdfDoc.Document,
+	})
 
 	// 创建新的 PDF 文档
 	newPdf, err := instance.FPDF_CreateNewDocument(&requests.FPDF_CreateNewDocument{})
@@ -108,7 +108,6 @@ func CompressImagesByRebuild(instance pdfium.Pdfium, inputPath string, outputPat
 				// 将提取出的图片保持原样插入到新文档中
 				_, err = instance.FPDFPage_InsertObject(&requests.FPDFPage_InsertObject{
 					Page: requests.Page{
-						// ByReference: &newPage.Page,
 						ByIndex: &requests.PageByIndex{
 							Document: newPdf.Document,
 							Index:    i,
@@ -123,7 +122,6 @@ func CompressImagesByRebuild(instance pdfium.Pdfium, inputPath string, outputPat
 				// 将非图片对象原封不动地插入到新页面
 				if _, err := instance.FPDFPage_InsertObject(&requests.FPDFPage_InsertObject{
 					Page: requests.Page{
-						// ByReference: &newPage.Page,
 						ByIndex: &requests.PageByIndex{
 							Document: newPdf.Document,
 							Index:    i,
@@ -138,7 +136,6 @@ func CompressImagesByRebuild(instance pdfium.Pdfium, inputPath string, outputPat
 			// 生成新页面的内容
 			if _, err := instance.FPDFPage_GenerateContent(&requests.FPDFPage_GenerateContent{
 				Page: requests.Page{
-					// ByReference: &newPage.Page,
 					ByIndex: &requests.PageByIndex{
 						Document: newPdf.Document,
 						Index:    i,
@@ -425,6 +422,7 @@ func CompressImagesInPlace(instance pdfium.Pdfium, inputPath string) error {
 	_, err = instance.FPDF_SaveAsCopy(&requests.FPDF_SaveAsCopy{
 		Document: pdfDoc.Document,
 		FilePath: &copyFilePath,
+		Flags:    requests.SaveFlagNoIncremental,
 	})
 	if err != nil {
 		return fmt.Errorf("无法保存 PDF: %v", err)
