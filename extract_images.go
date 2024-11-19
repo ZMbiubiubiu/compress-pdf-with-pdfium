@@ -3,14 +3,15 @@ package main
 import (
 	"compress-pdfium/util"
 	"fmt"
-	"log"
+	"strings"
 
 	"github.com/klippa-app/go-pdfium"
 	"github.com/klippa-app/go-pdfium/enums"
 	"github.com/klippa-app/go-pdfium/requests"
 )
 
-func ExtractImages(instance pdfium.Pdfium, inputPath string, outputPath string) error {
+func ExtractImages(instance pdfium.Pdfium, inputPath, outputPath string) error {
+
 	pdfDoc, err := instance.FPDF_LoadDocument(&requests.FPDF_LoadDocument{
 		Path:     &inputPath,
 		Password: nil,
@@ -22,7 +23,7 @@ func ExtractImages(instance pdfium.Pdfium, inputPath string, outputPath string) 
 		Document: pdfDoc.Document,
 	})
 
-	// 源文档图片大小
+	// 源文档页面数量
 	pageCountRes, err := instance.FPDF_GetPageCount(&requests.FPDF_GetPageCount{
 		Document: pdfDoc.Document,
 	})
@@ -30,80 +31,114 @@ func ExtractImages(instance pdfium.Pdfium, inputPath string, outputPath string) 
 		return err
 	}
 
+	fmt.Printf("pdf page count: %d\n", pageCountRes.PageCount)
+
+	// 遍历所有页面
 	for i := 0; i < pageCountRes.PageCount; i++ {
-		log.Println("加载页面:", i)
+		fmt.Printf("加载页面:%d\n", i)
 		pdfPage, err := instance.FPDF_LoadPage(&requests.FPDF_LoadPage{
 			Document: pdfDoc.Document,
 			Index:    i,
 		})
 		if err != nil {
-			return err
+			return fmt.Errorf("无法加载页面: %v", err)
 		}
 
-		pageSizeRes, err := instance.FPDF_GetPageSizeByIndex(&requests.FPDF_GetPageSizeByIndex{
-			Document: pdfDoc.Document,
-			Index:    i,
-		})
-		if err != nil {
-			return err
-		}
-
-		log.Printf("页面宽度：%f, 页面高度：%f\n", pageSizeRes.Width, pageSizeRes.Height)
-
-		// 遍历页面中的对象
+		// 遍历一个页面中的对象
 		objectCountRes, err := instance.FPDFPage_CountObjects(&requests.FPDFPage_CountObjects{
-			Page: requests.Page{ByReference: &pdfPage.Page},
+			Page: requests.Page{
+				ByIndex: &requests.PageByIndex{
+					Document: pdfDoc.Document,
+					Index:    i,
+				},
+			},
 		})
 		if err != nil {
-			return err
+			return fmt.Errorf("无法获取页面对象数量: %v", err)
 		}
 
 		for j := 0; j < objectCountRes.Count; j++ {
 			objRes, err := instance.FPDFPage_GetObject(&requests.FPDFPage_GetObject{
-				Page:  requests.Page{ByReference: &pdfPage.Page},
+				Page: requests.Page{
+					ByIndex: &requests.PageByIndex{
+						Document: pdfDoc.Document,
+						Index:    i,
+					},
+				},
 				Index: j,
 			})
 			if err != nil {
-				return err
+				return fmt.Errorf("无法获取页面对象: %v", err)
 			}
 
 			objTypeRes, err := instance.FPDFPageObj_GetType(&requests.FPDFPageObj_GetType{
 				PageObject: objRes.PageObject,
 			})
 			if err != nil {
-				return err
+				return fmt.Errorf("无法获取页面对象类型: %v", err)
 			}
-
-			// log.Printf("对象类型：%d\n", objTypeRes.Type)
-
 			if objTypeRes.Type == enums.FPDF_PAGEOBJ_IMAGE {
-				imageDataDecodedRes, err := instance.FPDFImageObj_GetImageDataDecoded(&requests.FPDFImageObj_GetImageDataDecoded{
-					ImageObject: objRes.PageObject,
-				})
-				if err != nil {
-					return err
-				}
-
-				log.Printf("解码后的图片大小：%d\n", len(imageDataDecodedRes.Data))
-
-				// 保存压缩后的图片
-				_, err = util.SaveImageFromData(imageDataDecodedRes.Data, fmt.Sprintf("./images/image_decoded_%d_%d", i, j))
-				if err != nil {
-					return err
-				}
+				// 	  - FPDFImageObj_GetBitmap
+				//    - FPDFBitmap_GetStride
+				//    - FPDFBitmap_GetWidth
+				//    - FPDFBitmap_GetHeight
+				//    - FPDFBitmap_GetFormat
 
 				imageMetadataRes, err := instance.FPDFImageObj_GetImageMetadata(&requests.FPDFImageObj_GetImageMetadata{
 					ImageObject: objRes.PageObject,
-					Page:        requests.Page{ByReference: &pdfPage.Page},
+					Page: requests.Page{
+						ByIndex: &requests.PageByIndex{
+							Document: pdfDoc.Document,
+							Index:    i,
+						},
+					},
 				})
 				if err != nil {
-					return err
+					return fmt.Errorf("无法获取图片元数据: %v", err)
 				}
 
-				log.Printf("图片元数据：%+v\n", imageMetadataRes.ImageMetadata)
+				filterCountRes, err := instance.FPDFImageObj_GetImageFilterCount(&requests.FPDFImageObj_GetImageFilterCount{
+					ImageObject: objRes.PageObject,
+				})
+				if err != nil {
+					return fmt.Errorf("无法获取图片滤镜数量: %v", err)
+				}
+
+				var filters = make([]string, 0, filterCountRes.Count)
+				for k := 0; k < filterCountRes.Count; k++ {
+					filterRes, err := instance.FPDFImageObj_GetImageFilter(&requests.FPDFImageObj_GetImageFilter{
+						ImageObject: objRes.PageObject,
+						Index:       k,
+					})
+					if err != nil {
+						return fmt.Errorf("无法获取图片滤镜: %v", err)
+					}
+					filters = append(filters, filterRes.ImageFilter)
+				}
+
+				bitmapInfo, err := GetBitmapInfo(instance, objRes.PageObject)
+				if err != nil {
+					return fmt.Errorf("无法获取图片位图信息: %v", err)
+				}
+
+				fmt.Printf("图片元数据: imageMetadataRes:%+v filter:[%s] bitmap info:%s\n",
+					imageMetadataRes.ImageMetadata, strings.Join(filters, ","), bitmapInfo)
+
+				filePrefix := fmt.Sprintf("%s/decoded_%d_%d", outputPath, i, j)
+				err = util.ConvertToJPEG(bitmapInfo.Width, bitmapInfo.Height, bitmapInfo.Stride, bitmapInfo.Data, filePrefix, 100, int(bitmapInfo.Format))
+				if err != nil {
+					return fmt.Errorf("无法保存图片: %v", err)
+				}
+
 			}
 		}
 
+		_, err = instance.FPDF_ClosePage(&requests.FPDF_ClosePage{
+			Page: pdfPage.Page,
+		})
+		if err != nil {
+			return err
+		}
 	}
 
 	return nil
