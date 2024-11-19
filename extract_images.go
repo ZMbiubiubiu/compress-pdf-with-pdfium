@@ -125,7 +125,7 @@ func ExtractImages(instance pdfium.Pdfium, inputPath, outputPath string) error {
 					imageMetadataRes.ImageMetadata, strings.Join(filters, ","), bitmapInfo)
 
 				filePrefix := fmt.Sprintf("%s/decoded_%d_%d", outputPath, i, j)
-				err = util.ConvertToJPEG(bitmapInfo.Width, bitmapInfo.Height, bitmapInfo.Stride, bitmapInfo.Data, filePrefix, 100, int(bitmapInfo.Format))
+				err = util.ConvertToJPEG(bitmapInfo.Width, bitmapInfo.Height, bitmapInfo.Stride, bitmapInfo.Data, filePrefix, 100, int(bitmapInfo.Format), false)
 				if err != nil {
 					return fmt.Errorf("无法保存图片: %v", err)
 				}

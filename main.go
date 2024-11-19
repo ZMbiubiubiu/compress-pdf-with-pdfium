@@ -26,15 +26,13 @@ func init() {
 
 func main() {
 	beginTime := time.Now()
-	inputPath := "../pdf-files/scan-small.pdf" // 初始pdf
-	outputPath := "../pdf-files/output10.pdf"  // 输出 PDF 文件路径
+	inputPath := "../pdf-files/logo.pdf"      // 初始pdf
+	outputPath := "../pdf-files/output10.pdf" // 输出 PDF 文件路径
 	_ = outputPath
 
-	if err := CompressImagesInPlace(instance, inputPath); err != nil {
+	if err := CompressImagesInPlace(instance, inputPath, 80, false); err != nil {
 		log.Fatalf("压缩 PDF 失败: %v", err)
 	}
 
 	fmt.Printf("PDF 压缩成功，耗时: %dms\n", time.Since(beginTime).Milliseconds())
-
-	// util.CompareFileSize(inputPath, outputPath)
 }

@@ -105,7 +105,7 @@ func RenderImage(data []byte, width int, height int, stride int, format int) (im
 					b = data[index]
 					g = data[index+1]
 					r = data[index+2]
-					a = 100 // 默认 alpha 为 255
+					a = 0 // 默认 alpha 为 255
 				}
 				img.Set(x, y, color.RGBA{r, g, b, a})
 			}
@@ -154,11 +154,15 @@ func RenderImage(data []byte, width int, height int, stride int, format int) (im
 	return nil, fmt.Errorf("不支持的图片格式: %d", format)
 }
 
-func ConvertToJPEG(width, height, stride int, data []byte, outputPath string, quality int, format int) error {
+func ConvertToJPEG(width, height, stride int, data []byte, outputPath string, quality int, format int, isToGray bool) error {
 	// 创建一个 RGBA 图像
 	img, err := RenderImage(data, width, height, stride, format)
 	if err != nil {
 		return err
+	}
+
+	if isToGray {
+		img = ConvertToGray(img)
 	}
 
 	// 创建输出文件
@@ -177,33 +181,6 @@ func ConvertToJPEG(width, height, stride int, data []byte, outputPath string, qu
 	}
 
 	log.Printf("JPEG 图像已保存到: %s", outputPath)
-	return nil
-}
-
-func ConvertToGrayJPEG(width, height, stride int, data []byte, outputPath string, quality int, format int) error {
-	// 创建一个 RGBA 图像
-	img, err := RenderImage(data, width, height, stride, format)
-	if err != nil {
-		return err
-	}
-
-	img = ConvertToGray(img)
-
-	// 创建输出文件
-	outFile, err := os.Create(outputPath)
-	if err != nil {
-		return err
-	}
-	defer outFile.Close()
-
-	// 设置 JPEG 压缩质量
-	jpegOptions := &jpeg.Options{Quality: quality}
-
-	// 将图像编码为 JPEG 格式并写入输出文件
-	if err := jpeg.Encode(outFile, img, jpegOptions); err != nil {
-		return err
-	}
-
 	return nil
 }
 
