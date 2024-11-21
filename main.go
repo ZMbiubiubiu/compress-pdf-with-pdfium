@@ -1,8 +1,10 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log"
+	"strings"
 	"time"
 
 	"github.com/klippa-app/go-pdfium"
@@ -24,15 +26,39 @@ func init() {
 	}
 }
 
-func main() {
-	beginTime := time.Now()
-	inputPath := "../pdf-files/logo.pdf"      // 初始pdf
-	outputPath := "../pdf-files/output10.pdf" // 输出 PDF 文件路径
-	_ = outputPath
+func AddLogo() {
+	logoFile := "/Users/zhangmeng56/Documents/github/go-practice/pdf/compress-pdf-with-pdfium-main/convert.png"
+	files := []string{
+		"../pdf-files/cbook.pdf",
+		// "../pdf_files/nologo.pdf",
+	}
+	var err error
 
-	if err := CompressImagesInPlace(instance, inputPath, 80, false); err != nil {
+	for _, file := range files {
+		err = PDFAddLogoV1(context.Background(), instance, logoFile, file, strings.Replace(file, ".pdf", "_logo_v1.pdf", 1), 1)
+		if err != nil {
+			log.Fatalf("PDFAddLogoV1 添加logo失败: %v", err)
+		}
+		err = PDFAddLogoV2(context.Background(), instance, logoFile, file, strings.Replace(file, ".pdf", "_logo_v2.pdf", 1), 1)
+		if err != nil {
+			log.Fatalf("PDFAddLogoV2 添加logo失败: %v", err)
+		}
+	}
+}
+
+func CompressPDF() {
+	inputPath := "../pdf-files/coding.pdf"
+
+	if err := CompressImagesInPlace(instance, inputPath, 90); err != nil {
 		log.Fatalf("压缩 PDF 失败: %v", err)
 	}
+}
+
+func main() {
+	beginTime := time.Now()
+
+	CompressPDF()
+	// AddLogo()
 
 	fmt.Printf("PDF 压缩成功，耗时: %dms\n", time.Since(beginTime).Milliseconds())
 }
