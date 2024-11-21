@@ -1,7 +1,7 @@
 package main
 
 import (
-	"compress-pdfium/util"
+	"compress-pdf/util"
 	"fmt"
 	"strings"
 
@@ -116,7 +116,12 @@ func ExtractImages(instance pdfium.Pdfium, inputPath, outputPath string) error {
 					filters = append(filters, filterRes.ImageFilter)
 				}
 
-				bitmapInfo, err := GetBitmapInfo(instance, objRes.PageObject)
+				bitmapInfo, err := GetBitmapInfo(instance, pdfDoc.Document, requests.Page{
+					ByIndex: &requests.PageByIndex{
+						Document: pdfDoc.Document,
+						Index:    i,
+					},
+				}, objRes.PageObject)
 				if err != nil {
 					return fmt.Errorf("无法获取图片位图信息: %v", err)
 				}
@@ -125,11 +130,10 @@ func ExtractImages(instance pdfium.Pdfium, inputPath, outputPath string) error {
 					imageMetadataRes.ImageMetadata, strings.Join(filters, ","), bitmapInfo)
 
 				filePrefix := fmt.Sprintf("%s/decoded_%d_%d", outputPath, i, j)
-				err = util.ConvertToJPEG(bitmapInfo.Width, bitmapInfo.Height, bitmapInfo.Stride, bitmapInfo.Data, filePrefix, 100, int(bitmapInfo.Format), false)
+				err = util.ConvertToJPEG(bitmapInfo.Width, bitmapInfo.Height, bitmapInfo.Stride, bitmapInfo.Data, filePrefix, 100, int(bitmapInfo.Format))
 				if err != nil {
 					return fmt.Errorf("无法保存图片: %v", err)
 				}
-
 			}
 		}
 
