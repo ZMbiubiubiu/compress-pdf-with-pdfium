@@ -48,11 +48,6 @@ func CopyFile(srcPath string, dstPath string) error {
 	return err
 }
 
-// func DecodeImage(data []byte) (image.Image, error) {
-// 	// return image.Decode(bytes.NewBuffer(data))
-
-// }
-
 func SaveImageFromData(data []byte, filePath string) (string, error) {
 	writeRawFile(filePath, data)
 	// 使用 image.Decode 直接解码图片
@@ -82,7 +77,9 @@ func SaveImageFromData(data []byte, filePath string) (string, error) {
 func RenderImage(data []byte, width int, height int, stride int, format int) (image.Image, error) {
 
 	switch enums.FPDF_BITMAP_FORMAT(format) {
+
 	case enums.FPDF_BITMAP_FORMAT_GRAY:
+		fmt.Println("GRAY GRAY GRAY GRAY GRAY")
 		img := image.NewGray(image.Rect(0, 0, width, height))
 		for y := 0; y < height; y++ {
 			for x := 0; x < width; x++ {
@@ -92,8 +89,9 @@ func RenderImage(data []byte, width int, height int, stride int, format int) (im
 		return img, nil
 
 	case enums.FPDF_BITMAP_FORMAT_BGR:
-		fmt.Println("BGR")
+		fmt.Println("BGR BGR BGR BGR BGR")
 		img := image.NewRGBA(image.Rect(0, 0, width, height))
+
 		for y := 0; y < height; y++ {
 			for x := 0; x < width; x++ {
 
@@ -105,13 +103,15 @@ func RenderImage(data []byte, width int, height int, stride int, format int) (im
 					b = data[index]
 					g = data[index+1]
 					r = data[index+2]
-					a = 0 // 默认 alpha 为 255
+					a = 255 // 默认 alpha 为 255
 				}
 				img.Set(x, y, color.RGBA{r, g, b, a})
 			}
 		}
+
 		return img, nil
 	case enums.FPDF_BITMAP_FORMAT_BGRA:
+		fmt.Println("BGRA BGRA BGRA BGRA BGRA")
 		img := image.NewRGBA(image.Rect(0, 0, width, height))
 		for y := 0; y < height; y++ {
 			for x := 0; x < width; x++ {
@@ -129,8 +129,12 @@ func RenderImage(data []byte, width int, height int, stride int, format int) (im
 				img.Set(x, y, color.RGBA{r, g, b, a})
 			}
 		}
+		// arr := ExtractAlphaChannel(img)
+		// PrintAlphaArray(arr)
+		return img, nil
 
 	case enums.FPDF_BITMAP_FORMAT_BGRX:
+		fmt.Println("BGRX BGRX BGRX BGRX BGRX")
 		img := image.NewRGBA(image.Rect(0, 0, width, height))
 		for y := 0; y < height; y++ {
 			for x := 0; x < width; x++ {
@@ -151,18 +155,38 @@ func RenderImage(data []byte, width int, height int, stride int, format int) (im
 		return img, nil
 
 	}
+
 	return nil, fmt.Errorf("不支持的图片格式: %d", format)
 }
 
-func ConvertToJPEG(width, height, stride int, data []byte, outputPath string, quality int, format int, isToGray bool) error {
+func ConvertToPNG(width, height, stride int, data []byte, outputPath string, quality int, format int) error {
 	// 创建一个 RGBA 图像
 	img, err := RenderImage(data, width, height, stride, format)
 	if err != nil {
 		return err
 	}
 
-	if isToGray {
-		img = ConvertToGray(img)
+	// 创建输出文件
+	outFile, err := os.Create(outputPath)
+	if err != nil {
+		return err
+	}
+	defer outFile.Close()
+
+	// 将图像编码为 png 格式并写入输出文件
+	if err := png.Encode(outFile, img); err != nil {
+		return err
+	}
+
+	log.Printf("png 图像已保存到: %s", outputPath)
+	return nil
+}
+
+func ConvertToJPEG(width, height, stride int, data []byte, outputPath string, quality int, format int) error {
+	// 创建一个 RGBA 图像
+	img, err := RenderImage(data, width, height, stride, format)
+	if err != nil {
+		return err
 	}
 
 	// 创建输出文件
@@ -245,4 +269,113 @@ func writePNGFile(filename string, img image.Image) error {
 
 func writeRawFile(filename string, data []byte) error {
 	return os.WriteFile(filename, data, 0644)
+}
+
+func MergePNGFiles(imagePath string, maskPath string, outputPath string) error {
+	// 打开图像文件
+	imgFile, err := os.Open(imagePath)
+	if err != nil {
+		return err
+	}
+	defer imgFile.Close()
+
+	// 解码图像
+	img, _, err := image.Decode(imgFile)
+	if err != nil {
+		return err
+	}
+
+	// 打开遮罩文件
+	maskFile, err := os.Open(maskPath)
+	if err != nil {
+		return err
+	}
+	defer maskFile.Close()
+
+	// 解码遮罩
+	mask, _, err := image.Decode(maskFile)
+	if err != nil {
+		return err
+	}
+
+	// 创建一个新的 RGBA 图像
+	bounds := img.Bounds()
+	mergedImg := image.NewRGBA(bounds)
+
+	// 遍历每个像素，合并图像和遮罩
+	for y := 0; y < bounds.Dy(); y++ {
+		for x := 0; x < bounds.Dx(); x++ {
+			imgColor := img.At(x, y)
+			maskColor := mask.At(x, y)
+
+			// 获取遮罩的 alpha 值
+			_, _, _, a := maskColor.RGBA()
+
+			// 将图像的颜���与遮罩的 alpha 值结合
+			r, g, b, _ := imgColor.RGBA()
+			mergedImg.Set(x, y, color.RGBA{uint8(r >> 8), uint8(g >> 8), uint8(b >> 8), uint8(a >> 8)})
+		}
+	}
+
+	// // 获取两个图像的边界
+	// bounds1 := img.Bounds()
+	// bounds2 := mask.Bounds()
+
+	// // 创建一个新的图像，大小为两个图像的合并边界
+	// mergedBounds := bounds1.Union(bounds2)
+	// mergedImg := image.NewRGBA(mergedBounds)
+
+	// // 将第二个图像绘制到合并图像上
+	// draw.Draw(mergedImg, bounds2, mask, image.Point{}, draw.Over)
+
+	// // 将第一个图像绘制到合并图像上
+	// draw.Draw(mergedImg, bounds1, img, image.Point{}, draw.Over)
+
+	// 创建输出文件
+	outFile, err := os.Create(outputPath)
+	if err != nil {
+		return err
+	}
+	defer outFile.Close()
+
+	// 将合并后的图像编码为 PNG 格式并写入输出文件
+	if err := png.Encode(outFile, mergedImg); err != nil {
+		return err
+	}
+
+	log.Printf("合并后的图像已保存到: %s", outputPath)
+	return nil
+}
+
+// ExtractAlphaChannel 从 RGBA 图像中提取 alpha 通道并存储在二维数组中
+func ExtractAlphaChannel(img *image.RGBA) [][]uint8 {
+	width := img.Bounds().Dx()
+	height := img.Bounds().Dy()
+
+	// 创建一个二维数组来存储 alpha 值
+	alphaArray := make([][]uint8, height)
+	for i := range alphaArray {
+		alphaArray[i] = make([]uint8, width)
+	}
+
+	// 填充 alpha 值
+	for y := 0; y < height; y++ {
+		for x := 0; x < width; x++ {
+			// 获取当前像素的颜色
+			c := img.RGBAAt(x, y)
+			alphaArray[y][x] = c.A // 存储 alpha 值
+		}
+	}
+
+	return alphaArray
+}
+
+// 打印二维数组
+func PrintAlphaArray(alphaArray [][]uint8) {
+	for _, row := range alphaArray {
+		for _, a := range row {
+			fmt.Printf("%d ", a) // 打印 alpha 值
+		}
+		fmt.Println() // 换行
+	}
 }
