@@ -3,6 +3,8 @@ package main
 import (
 	"compress-pdf/util"
 	"fmt"
+	"image/png"
+	"os"
 	"strings"
 
 	"github.com/klippa-app/go-pdfium"
@@ -129,10 +131,37 @@ func ExtractImages(instance pdfium.Pdfium, inputPath, outputPath string) error {
 				fmt.Printf("图片元数据: imageMetadataRes:%+v filter:[%s] bitmap info:%s\n",
 					imageMetadataRes.ImageMetadata, strings.Join(filters, ","), bitmapInfo)
 
-				filePrefix := fmt.Sprintf("%s/decoded_%d_%d", outputPath, i, j)
-				err = util.ConvertToJPEG(bitmapInfo.Width, bitmapInfo.Height, bitmapInfo.Stride, bitmapInfo.Data, filePrefix, 100, int(bitmapInfo.Format))
+				isAlphaValid, img, err := util.RenderImage(bitmapInfo.Data, bitmapInfo.Width, bitmapInfo.Height, bitmapInfo.Stride, int(bitmapInfo.Format))
 				if err != nil {
-					return fmt.Errorf("无法保存图片: %v", err)
+					return fmt.Errorf("无法渲染图片: %v", err)
+				}
+
+				inputFileName := strings.Split(inputPath, "/")[len(strings.Split(inputPath, "/"))-1]
+				filename := fmt.Sprintf("./images-files/%s_%d_%d", inputFileName, i, j)
+
+				if isAlphaValid {
+					// 测试用，留痕，保存为png
+					func() {
+						filename = filename + ".png"
+						outFile, _ := os.Create(filename)
+						defer outFile.Close()
+
+						// 将图像编码为 png 格式并写入输出文件
+						png.Encode(outFile, img)
+					}()
+				} else {
+					filename = filename + ".jpeg"
+					err = util.ConvertToJPEG(img, filename, 100)
+					if err != nil {
+						return fmt.Errorf("无法保存图片: %v", err)
+					}
+				}
+				// os.Remove(filename)
+
+				if _, err = instance.FPDFBitmap_Destroy(&requests.FPDFBitmap_Destroy{
+					Bitmap: bitmapInfo.BitmapRef,
+				}); err != nil {
+					return err
 				}
 			}
 		}
