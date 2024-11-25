@@ -3,6 +3,8 @@ package main
 import (
 	"compress-pdf/util"
 	"fmt"
+	"image/png"
+	"os"
 	"strings"
 	"time"
 
@@ -86,88 +88,101 @@ func CompressImagesInPlace(instance pdfium.Pdfium, inputPath string, quality int
 				return fmt.Errorf("无法获取页面对象类型: %v", err)
 			}
 
-			if objTypeRes.Type == enums.FPDF_PAGEOBJ_IMAGE {
-				// 	  - FPDFImageObj_GetBitmap
-				//    - FPDFBitmap_GetStride
-				//    - FPDFBitmap_GetWidth
-				//    - FPDFBitmap_GetHeight
-				//    - FPDFBitmap_GetFormat
+			// 当前只压缩图像
+			if objTypeRes.Type != enums.FPDF_PAGEOBJ_IMAGE {
+				continue
+			}
 
-				bitmapInfo, err := GetBitmapInfo(instance, pdfDoc.Document, requests.Page{
+			bitmapInfo, err := GetBitmapInfo(instance, pdfDoc.Document, requests.Page{
+				ByIndex: &requests.PageByIndex{
+					Document: pdfDoc.Document,
+					Index:    i,
+				},
+			}, objRes.PageObject)
+			if err != nil {
+				return fmt.Errorf("无法获取图片位图信息: %v", err)
+			}
+
+			imageMetadataRes, err := instance.FPDFImageObj_GetImageMetadata(&requests.FPDFImageObj_GetImageMetadata{
+				ImageObject: objRes.PageObject,
+				Page: requests.Page{
 					ByIndex: &requests.PageByIndex{
 						Document: pdfDoc.Document,
 						Index:    i,
 					},
-				}, objRes.PageObject)
+				},
+			})
+			if err != nil {
+				return fmt.Errorf("无法获取图片元数据: %v", err)
+			}
+
+			filters, err := GetImageObjectFilter(instance, objRes.PageObject)
+			if err != nil {
+				return err
+			}
+
+			fmt.Printf("图片元数据: imageMetadataRes:%+v filter:[%s] bitmap info:%s\n",
+				imageMetadataRes.ImageMetadata, strings.Join(filters, ","), bitmapInfo)
+
+			isAlphaValid, img, err := util.RenderImage(bitmapInfo.Data, bitmapInfo.Width, bitmapInfo.Height, bitmapInfo.Stride, int(bitmapInfo.Format))
+			if err != nil {
+				return fmt.Errorf("无法渲染图片: %v", err)
+			}
+
+			inputFileName := strings.Split(inputPath, "/")[len(strings.Split(inputPath, "/"))-1]
+			filename := fmt.Sprintf("./images-files/%s_%d_%d", inputFileName, i, j)
+
+			if isAlphaValid {
+				// 测试用，留痕，保存为png
+				func() {
+					filename = filename + ".png"
+					outFile, _ := os.Create(filename)
+					defer outFile.Close()
+
+					// 将图像编码为 png 格式并写入输出文件
+					png.Encode(outFile, img)
+				}()
+
+				watermarkBitmap, err := CreateBitmapFromImage(instance, img, 1)
 				if err != nil {
-					return fmt.Errorf("无法获取图片位图信息: %v", err)
+					return fmt.Errorf("无法创建水印位图: %v", err)
 				}
 
-				imageMetadataRes, err := instance.FPDFImageObj_GetImageMetadata(&requests.FPDFImageObj_GetImageMetadata{
+				instance.FPDFImageObj_SetBitmap(&requests.FPDFImageObj_SetBitmap{
 					ImageObject: objRes.PageObject,
-					Page: requests.Page{
+					Bitmap:      watermarkBitmap.bitmapRef,
+				})
+			} else {
+				filename = filename + ".jpeg"
+				err = util.ConvertToJPEG(img, filename, quality)
+				if err != nil {
+					return fmt.Errorf("无法保存图片: %v", err)
+				}
+
+				_, err = instance.FPDFImageObj_LoadJpegFileInline(&requests.FPDFImageObj_LoadJpegFileInline{
+					ImageObject: objRes.PageObject,
+					Page: &requests.Page{
 						ByIndex: &requests.PageByIndex{
 							Document: pdfDoc.Document,
 							Index:    i,
 						},
 					},
+					Count:    1,
+					FilePath: filename,
 				})
 				if err != nil {
-					return fmt.Errorf("无法获取图片元数据: %v", err)
+					fmt.Printf("FPDFImageObj_LoadJpegFileInline: %v\n", err)
+					return fmt.Errorf("无法加载图片: %v", err)
 				}
-
-				filters, err := GetImageObjectFilter(instance, objRes.PageObject)
-				if err != nil {
-					return err
-				}
-
-				fmt.Printf("图片元数据: imageMetadataRes:%+v filter:[%s] bitmap info:%s\n",
-					imageMetadataRes.ImageMetadata, strings.Join(filters, ","), bitmapInfo)
-
-				filename := fmt.Sprintf("./images-files/decoded_%d_%d", i, j)
-				if bitmapInfo.Format == enums.FPDF_BITMAP_FORMAT_BGR {
-					filename = filename + ".png"
-					err = util.ConvertToPNG(bitmapInfo.Width, bitmapInfo.Height, bitmapInfo.Stride, bitmapInfo.Data, filename, quality, int(bitmapInfo.Format))
-					if err != nil {
-						return fmt.Errorf("无法保存图片: %v", err)
-					}
-
-					watermarkBitmap, err := CreateBitmap(instance, filename, 1)
-					if err != nil {
-						return fmt.Errorf("无法创建水印位图: %v", err)
-					}
-
-					instance.FPDFImageObj_SetBitmap(&requests.FPDFImageObj_SetBitmap{
-						ImageObject: objRes.PageObject,
-						Bitmap:      watermarkBitmap.bitmapRef,
-					})
-				} else {
-					filename = filename + ".jpeg"
-					err = util.ConvertToJPEG(bitmapInfo.Width, bitmapInfo.Height, bitmapInfo.Stride, bitmapInfo.Data, filename, quality, int(bitmapInfo.Format))
-					if err != nil {
-						return fmt.Errorf("无法保存图片: %v", err)
-					}
-
-					_, err = instance.FPDFImageObj_LoadJpegFileInline(&requests.FPDFImageObj_LoadJpegFileInline{
-						ImageObject: objRes.PageObject,
-						Page: &requests.Page{
-							ByIndex: &requests.PageByIndex{
-								Document: pdfDoc.Document,
-								Index:    i,
-							},
-						},
-						Count:    1,
-						FilePath: filename,
-					})
-					if err != nil {
-						fmt.Printf("FPDFImageObj_LoadJpegFileInline: %v\n", err)
-						return fmt.Errorf("无法加载图片: %v", err)
-					}
-
-				}
-				// os.Remove(filename)
-
 			}
+			// os.Remove(filename)
+
+			if _, err = instance.FPDFBitmap_Destroy(&requests.FPDFBitmap_Destroy{
+				Bitmap: bitmapInfo.BitmapRef,
+			}); err != nil {
+				return err
+			}
+
 		}
 
 		_, err = instance.FPDFPage_GenerateContent(&requests.FPDFPage_GenerateContent{
@@ -229,11 +244,12 @@ func GetImageObjectFilter(instance pdfium.Pdfium, imgObj references.FPDF_PAGEOBJ
 }
 
 type BitmapInfo struct {
-	Width  int
-	Height int
-	Stride int
-	Format enums.FPDF_BITMAP_FORMAT
-	Data   []byte
+	Width     int
+	Height    int
+	Stride    int
+	Format    enums.FPDF_BITMAP_FORMAT
+	Data      []byte
+	BitmapRef references.FPDF_BITMAP
 }
 
 func (b *BitmapInfo) String() string {
@@ -241,23 +257,23 @@ func (b *BitmapInfo) String() string {
 }
 
 func GetBitmapInfo(instance pdfium.Pdfium, document references.FPDF_DOCUMENT, page requests.Page, imgObj references.FPDF_PAGEOBJECT) (*BitmapInfo, error) {
-	bitmapRes, err := instance.FPDFImageObj_GetRenderedBitmap(&requests.FPDFImageObj_GetRenderedBitmap{
-		ImageObject: imgObj,
-		Page:        page,
-		Document:    document,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("无法获取图片位图: %v", err)
-	}
-
-	// bitmapRes, err := instance.FPDFImageObj_GetBitmap(&requests.FPDFImageObj_GetBitmap{
+	// bitmapRes, err := instance.FPDFImageObj_GetRenderedBitmap(&requests.FPDFImageObj_GetRenderedBitmap{
 	// 	ImageObject: imgObj,
-	// 	// Page:        page,
-	// 	// Document:    document,
+	// 	Page:        page,
+	// 	Document:    document,
 	// })
 	// if err != nil {
 	// 	return nil, fmt.Errorf("无法获取图片位图: %v", err)
 	// }
+
+	bitmapRes, err := instance.FPDFImageObj_GetBitmap(&requests.FPDFImageObj_GetBitmap{
+		ImageObject: imgObj,
+		// Page:        page,
+		// Document:    document,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("无法获取图片位图: %v", err)
+	}
 
 	strideRes, err := instance.FPDFBitmap_GetStride(&requests.FPDFBitmap_GetStride{
 		Bitmap: bitmapRes.Bitmap,
@@ -295,10 +311,11 @@ func GetBitmapInfo(instance pdfium.Pdfium, document references.FPDF_DOCUMENT, pa
 	}
 
 	return &BitmapInfo{
-		Width:  bitmapWidthRes.Width,
-		Height: bitmapHeightRes.Height,
-		Stride: strideRes.Stride,
-		Format: formatRes.Format,
-		Data:   bufferRes.Buffer,
+		Width:     bitmapWidthRes.Width,
+		Height:    bitmapHeightRes.Height,
+		Stride:    strideRes.Stride,
+		Format:    formatRes.Format,
+		Data:      bufferRes.Buffer,
+		BitmapRef: bitmapRes.Bitmap,
 	}, nil
 }
