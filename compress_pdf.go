@@ -14,6 +14,10 @@ import (
 	"github.com/klippa-app/go-pdfium/requests"
 )
 
+const (
+	JBIG2DecodeFilter = "JBIG2Decode" // JBIG2Decode 是一种高效的二值图像压缩格式，广泛应用于 PDF 文档中，特别是在处理扫描文档和传真图像时
+)
+
 func CompressImagesInPlace(instance pdfium.Pdfium, inputPath string, quality int) error {
 
 	// 因为是原地更新，测试阶段，先备份原文件
@@ -103,6 +107,13 @@ func CompressImagesInPlace(instance pdfium.Pdfium, inputPath string, quality int
 				return fmt.Errorf("无法获取图片位图信息: %v", err)
 			}
 
+			dataRawRes, err := instance.FPDFImageObj_GetImageDataRaw(&requests.FPDFImageObj_GetImageDataRaw{
+				ImageObject: objRes.PageObject,
+			})
+			if err != nil {
+				return fmt.Errorf("无法获取图片数据: %v", err)
+			}
+
 			imageMetadataRes, err := instance.FPDFImageObj_GetImageMetadata(&requests.FPDFImageObj_GetImageMetadata{
 				ImageObject: objRes.PageObject,
 				Page: requests.Page{
@@ -121,13 +132,27 @@ func CompressImagesInPlace(instance pdfium.Pdfium, inputPath string, quality int
 				return err
 			}
 
-			fmt.Printf("图片元数据: imageMetadataRes:%+v filter:[%s] bitmap info:%s\n",
-				imageMetadataRes.ImageMetadata, strings.Join(filters, ","), bitmapInfo)
+			var shouldSkip bool
+			for _, filter := range filters {
+				switch filter {
+				case JBIG2DecodeFilter:
+					fmt.Printf("JBIG2DecodeFilter\n")
+					shouldSkip = true
+				}
+			}
+
+			fmt.Printf("图片元数据: raw len: %d imageMetadataRes:%+v filter:[%s] bitmap info:%s\n",
+				len(dataRawRes.Data), imageMetadataRes.ImageMetadata, strings.Join(filters, ","), bitmapInfo)
+
+			if shouldSkip {
+				continue
+			}
 
 			isAlphaValid, img, err := util.RenderImage(bitmapInfo.Data, bitmapInfo.Width, bitmapInfo.Height, bitmapInfo.Stride, int(bitmapInfo.Format))
 			if err != nil {
 				return fmt.Errorf("无法渲染图片: %v", err)
 			}
+			// isAlphaValid = true
 
 			inputFileName := strings.Split(inputPath, "/")[len(strings.Split(inputPath, "/"))-1]
 			filename := fmt.Sprintf("./images-files/%s_%d_%d", inputFileName, i, j)
@@ -145,7 +170,7 @@ func CompressImagesInPlace(instance pdfium.Pdfium, inputPath string, quality int
 
 				watermarkBitmap, err := CreateBitmapFromImage(instance, img, 1)
 				if err != nil {
-					return fmt.Errorf("无法创建水印位图: %v", err)
+					return fmt.Errorf("无法创建位图: %v", err)
 				}
 
 				instance.FPDFImageObj_SetBitmap(&requests.FPDFImageObj_SetBitmap{
@@ -159,6 +184,11 @@ func CompressImagesInPlace(instance pdfium.Pdfium, inputPath string, quality int
 					return fmt.Errorf("无法保存图片: %v", err)
 				}
 
+				data, err := os.ReadFile(filename)
+				if err != nil {
+					return fmt.Errorf("无法读取图片: %v", err)
+				}
+
 				_, err = instance.FPDFImageObj_LoadJpegFileInline(&requests.FPDFImageObj_LoadJpegFileInline{
 					ImageObject: objRes.PageObject,
 					Page: &requests.Page{
@@ -167,8 +197,9 @@ func CompressImagesInPlace(instance pdfium.Pdfium, inputPath string, quality int
 							Index:    i,
 						},
 					},
-					Count:    1,
-					FilePath: filename,
+					Count: 1,
+					// FilePath: filename,
+					FileData: data,
 				})
 				if err != nil {
 					fmt.Printf("FPDFImageObj_LoadJpegFileInline: %v\n", err)
@@ -257,20 +288,20 @@ func (b *BitmapInfo) String() string {
 }
 
 func GetBitmapInfo(instance pdfium.Pdfium, document references.FPDF_DOCUMENT, page requests.Page, imgObj references.FPDF_PAGEOBJECT) (*BitmapInfo, error) {
-	// bitmapRes, err := instance.FPDFImageObj_GetRenderedBitmap(&requests.FPDFImageObj_GetRenderedBitmap{
-	// 	ImageObject: imgObj,
-	// 	Page:        page,
-	// 	Document:    document,
-	// })
-	// if err != nil {
-	// 	return nil, fmt.Errorf("无法获取图片位图: %v", err)
-	// }
-
-	bitmapRes, err := instance.FPDFImageObj_GetBitmap(&requests.FPDFImageObj_GetBitmap{
+	bitmapRes, err := instance.FPDFImageObj_GetRenderedBitmap(&requests.FPDFImageObj_GetRenderedBitmap{
 		ImageObject: imgObj,
-		// Page:        page,
-		// Document:    document,
+		Page:        page,
+		Document:    document,
 	})
+	if err != nil {
+		return nil, fmt.Errorf("无法获取图片位图: %v", err)
+	}
+
+	// bitmapRes, err := instance.FPDFImageObj_GetBitmap(&requests.FPDFImageObj_GetBitmap{
+	// 	ImageObject: imgObj,
+	// 	// Page:        page,
+	// 	// Document:    document,
+	// })
 	if err != nil {
 		return nil, fmt.Errorf("无法获取图片位图: %v", err)
 	}
