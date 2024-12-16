@@ -118,12 +118,13 @@ func ExtractImages(instance pdfium.Pdfium, inputPath, outputPath string) error {
 					filters = append(filters, filterRes.ImageFilter)
 				}
 
+				// 获取图片位图信息
 				bitmapInfo, err := GetBitmapInfo(instance, pdfDoc.Document, requests.Page{
 					ByIndex: &requests.PageByIndex{
 						Document: pdfDoc.Document,
 						Index:    i,
 					},
-				}, objRes.PageObject)
+				}, objRes.PageObject, true)
 				if err != nil {
 					return fmt.Errorf("无法获取图片位图信息: %v", err)
 				}
