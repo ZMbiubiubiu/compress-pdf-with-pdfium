@@ -184,7 +184,7 @@ func CompressImagesInPlace(instance pdfium.Pdfium, inputPath string, quality int
 			}
 
 			switch filter {
-			case DCTDecodeFilter, "":
+			case DCTDecodeFilter, JBIG2DecodeFilter, "":
 				img, format, err = GetImageFromBitmap(instance, pdfDoc.Document, requests.Page{
 					ByIndex: &requests.PageByIndex{
 						Document: pdfDoc.Document,
@@ -203,8 +203,8 @@ func CompressImagesInPlace(instance pdfium.Pdfium, inputPath string, quality int
 				// if float32(imageMetadataRes.ImageMetadata.Width)/float32(bitmapInfo.Width) > 2 {
 				// 	isSkip = true
 				// }
-			case JBIG2DecodeFilter:
-				isSkip = true
+			// case JBIG2DecodeFilter:
+			// 	isSkip = true
 			case CCITTFaxDecodeFilter:
 				isSkip = true
 			default:
@@ -286,6 +286,29 @@ func CompressImagesInPlace(instance pdfium.Pdfium, inputPath string, quality int
 			if err != nil {
 				return fmt.Errorf("无法设置图片: %v", err)
 			}
+		}
+
+		rectObj, err := instance.FPDFPageObj_CreateNewRect(&requests.FPDFPageObj_CreateNewRect{
+			X: 0,
+			Y: 0,
+			W: 1,
+			H: 1,
+		})
+		if err != nil {
+			return fmt.Errorf("无法创建矩形对象: %v", err)
+		}
+
+		_, err = instance.FPDFPage_InsertObject(&requests.FPDFPage_InsertObject{
+			Page: requests.Page{
+				ByIndex: &requests.PageByIndex{
+					Document: pdfDoc.Document,
+					Index:    i,
+				},
+			},
+			PageObject: rectObj.PageObject,
+		})
+		if err != nil {
+			return fmt.Errorf("无法插入矩形对象: %v", err)
 		}
 
 		_, err = instance.FPDFPage_GenerateContent(&requests.FPDFPage_GenerateContent{
