@@ -6,17 +6,18 @@ import (
 	"image/color"
 	"image/jpeg"
 	"io"
-	"log"
 	"os"
+	"path/filepath"
 
 	"github.com/klippa-app/go-pdfium/enums"
+	"github.com/nfnt/resize"
 )
 
 func CompareFileSize(filePath1 string, filePath2 string) {
 	size1, _ := fileSize(filePath1)
 	size2, _ := fileSize(filePath2)
 
-	fmt.Printf("文件1大小：%dB, 文件2大小：%dB\n", size1, size2)
+	fmt.Printf("文件1大小：%.fKB, 文件2大小：%.fKB\n", float64(size1)/1024, float64(size2)/1024)
 	fmt.Printf("文件2/文件1：%.2f%%\n", (float64(size2)/float64(size1))*100)
 }
 
@@ -149,12 +150,7 @@ func ConvertToJPEG(img image.Image, outputPath string, quality int) error {
 		return err
 	}
 
-	log.Printf("JPEG 图像已保存到: %s", outputPath)
 	return nil
-}
-
-func writeRawFile(filename string, data []byte) error {
-	return os.WriteFile(filename, data, 0644)
 }
 
 // ExtractAlphaChannel 从 RGBA 图像中提取 alpha 通道并存储在二维数组中
@@ -188,4 +184,35 @@ func PrintAlphaArray(alphaArray [][]uint8) {
 		}
 		fmt.Println() // 换行
 	}
+}
+
+// ChangeDPI 修改图像的 DPI
+func ReduceDPI(img image.Image, originalWidth int, originalDPI, newDPI float32) image.Image {
+
+	// 获取原始图像的尺寸
+	width := uint(float32(originalWidth) * newDPI / originalDPI)
+	if width > uint(img.Bounds().Dx()) {
+		return img
+	}
+	fmt.Printf("original width: %d, new width: %d originalDPI: %f, newDPI: %f\n", img.Bounds().Dx(), width, originalDPI, newDPI)
+
+	return resize.Resize(width, 0, img, resize.Bicubic)
+}
+
+func GetFilePath(inputDir string, fileExt string) []string {
+	var pdfPaths []string
+
+	// 使用 Walk 函数遍历目录
+	filepath.Walk(inputDir, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		// 检查文件扩展名是否为 .pdf
+		if !info.IsDir() && (filepath.Ext(path) != "" && filepath.Ext(path) == fileExt) {
+			pdfPaths = append(pdfPaths, path)
+		}
+		return nil
+	})
+
+	return pdfPaths
 }
